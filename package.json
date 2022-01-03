@@ -1,29 +1,33 @@
 {
   "name": "@evops/lightwaverf",
   "description": "Lightwave RF client library",
-  "version": "0.0.6",
-  "main": "index.js",
+  "version": "0.0.8",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": "bin/lightwaverf.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublish": "tsc"
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/ollieparsley/node-lightwaverf.git"
+    "url": "git://github.com/eu-evos/node-lightwaverf.git"
   },
   "keywords": [
     "lightwaverf"
   ],
-  "author": "Ollie Parsley",
-  "license": "BSD-2-Clause",
+  "author": "Stanislaw Wozniak",
+  "license": "MIT",
   "bugs": {
-    "url": "https://github.com/ollieparsley/node-lightwaverf/issues"
+    "url": "https://github.com/eu-evos/node-lightwaverf/issues"
   },
   "dependencies": {
-    "debug": "~2.2.0",
+    "@types/debug": "^4.1.7",
+    "@types/js-yaml": "^4.0.5",
+    "@types/request-promise": "^4.1.48",
+    "debug": "4.3.3",
     "js-yaml": ">=3.5.3",
     "request": "^2.74.0",
-    "request-promise": "^4.1.1",
-    "wait.for": ">=0.6.6"
+    "request-promise": "^4.1.1"
   }
 }

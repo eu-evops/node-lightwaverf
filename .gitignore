@@ -10,6 +10,9 @@ lib-cov
 pids
 logs
 results
+dist
+*.tgz
+test.ts
 
 npm-debug.log
 node_modules
