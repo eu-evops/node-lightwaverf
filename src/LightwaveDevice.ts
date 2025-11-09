@@ -1,12 +1,11 @@
-import Debug from 'debug';
-import { LightwaveRFClient } from './LightwaveRFClient';
+import debug from "debug";
 
-export interface LightwaveRFDeviceInterface {
-  roomId: number
-  deviceId: number
-  roomName: string
-  deviceName: string
-  deviceType: string
+export interface ILightwaveDevice {
+  roomId: number;
+  deviceId: number;
+  roomName: string;
+  deviceName: string;
+  deviceType: string;
 }
 
 export enum LightwaveDeviceType {
@@ -14,53 +13,27 @@ export enum LightwaveDeviceType {
   OnOff = "O",
 }
 
-export class LightwaveDevice implements LightwaveRFDeviceInterface {
+export class LightwaveDevice implements ILightwaveDevice {
   roomId: number;
   deviceId: number;
   roomName: string;
   deviceName: string;
   deviceType: LightwaveDeviceType;
-  client: LightwaveRFClient;
-  debug: Debug.Debugger;
+  debug: debug.Debugger;
 
-  constructor(client: LightwaveRFClient, debug: debug.Debugger, roomId: number, deviceId: number, roomName: string, deviceName: string, deviceType: LightwaveDeviceType) {
-    this.client = client;
+  constructor(
+    debug: debug.Debugger,
+    roomId: number,
+    deviceId: number,
+    roomName: string,
+    deviceName: string,
+    deviceType: LightwaveDeviceType
+  ) {
     this.debug = debug.extend(deviceName);
     this.roomId = roomId;
     this.deviceId = deviceId;
     this.roomName = roomName;
     this.deviceName = deviceName;
     this.deviceType = deviceType;
-  }
-
-  async turnOn(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.debug("Device turning on");
-      this.client.send(`R${this.roomId}D${this.deviceId}F1`, (message, error) => {
-        resolve();
-      });
-    });
-  }
-
-  async turnOff(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.debug("Device turning off");
-      this.client.send(`R${this.roomId}D${this.deviceId}F0`, (message, error) => {
-        if (error) return reject(error);
-        resolve();
-      });
-    });
-  }
-
-  async dim(percentage: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.debug("Device dimming to %d", percentage);
-
-      const lwDim = Math.round(percentage * 0.32);
-      this.client.send(`R${this.roomId}D${this.deviceId}FdP${lwDim}`, (message, error) => {
-        if (error) return reject(error);
-        resolve();
-      });
-    });
   }
 }

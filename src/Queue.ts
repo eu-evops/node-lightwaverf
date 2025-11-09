@@ -10,8 +10,7 @@ export class Queue<T> {
     this.items.push(item);
   }
 
-  receive(): T | undefined {
+  next(): T | undefined {
     return this.items.shift();
   }
-
 }

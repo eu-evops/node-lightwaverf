@@ -1,0 +1,14 @@
+{
+  "error": "false",
+  "message": "User [1] ",
+  "application_key": "appkey",
+  "content": {
+    "user_id": 1,
+    "id": 1,
+    "created": 1447964496,
+    "updated": 1748305913,
+    "active": 1,
+    "homepage": "room-list",
+    "application_key": "appkey"
+  }
+}

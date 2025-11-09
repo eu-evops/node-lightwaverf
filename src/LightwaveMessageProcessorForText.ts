@@ -1,16 +1,18 @@
 import { Debugger } from "debug";
-import "./LightwaveTransaction";
 import LightwaveMessageProcessor from "./LightwaveMessageProcessor";
+import "./LightwaveTransaction";
 
-export default class LightwaveTextMessageProcessor implements LightwaveMessageProcessor {
+export default class LightwaveMessageProcessorForText
+  implements LightwaveMessageProcessor
+{
   debug: Debugger;
   constructor(debug: Debugger) {
-    this.debug = debug.extend('textMessageProcessor');
+    this.debug = debug.extend("textMessageProcessor");
   }
 
   process(message: Buffer): any {
-    this.debug('Processing message')
-    const textMessage = message.toString('utf-8');
+    this.debug("Processing message");
+    const textMessage = message.toString("utf-8");
     var parts = textMessage.split(",");
     var trans = parts.splice(0, 1);
     var content = parts.join(",").replace(/(\r\n|\n|\r)/gm, "");
@@ -24,7 +26,6 @@ export default class LightwaveTextMessageProcessor implements LightwaveMessagePr
 
   canProcess(message: Buffer): boolean {
     this.debug("Checking if can process message");
-    return message.toString('utf-8').endsWith("\n");
+    return message.toString("utf-8").endsWith("\n");
   }
-
 }

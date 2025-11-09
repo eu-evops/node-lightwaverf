@@ -1,17 +1,18 @@
 import { Debugger } from "debug";
-import "./LightwaveTransaction";
-import { LightwaveTransaction } from "./LightwaveTransaction";
 import LightwaveMessageProcessor from "./LightwaveMessageProcessor";
+import "./LightwaveTransaction";
 
-export class LightwaveJsonMessageProcessor implements LightwaveMessageProcessor {
+export class LightwaveMessageProcessorForJson
+  implements LightwaveMessageProcessor
+{
   debug: Debugger;
   constructor(debug: Debugger) {
-    this.debug = debug.extend('jsonMessageProcessor');
+    this.debug = debug.extend("jsonMessageProcessor");
   }
 
   process(message: Buffer): any {
-    this.debug('Processing message')
-    const textMessage = message.toString('utf-8').replace('*!', '');
+    this.debug("Processing message");
+    const textMessage = message.toString("utf-8").replace("*!", "");
     const json = JSON.parse(textMessage);
 
     const response = json;
@@ -23,7 +24,6 @@ export class LightwaveJsonMessageProcessor implements LightwaveMessageProcessor 
 
   canProcess(message: Buffer): boolean {
     this.debug("Checking if can process message");
-    return message.toString('utf-8').startsWith('*!');
+    return message.toString("utf-8").startsWith("*!");
   }
-
 }

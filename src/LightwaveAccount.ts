@@ -1,64 +1,95 @@
 import Debug, { Debugger } from "debug";
-import { RequestAPI, RequiredUriUrl } from "request";
-import rp from "request-promise";
 import { LightwaveDevice, LightwaveDeviceType } from "./LightwaveDevice";
-import { LightwaveRFClient } from "./LightwaveRFClient";
 
 export class LightwaveAccount {
   debug: Debug.Debugger;
-  client: LightwaveRFClient;
   email: string;
   pin: string;
   mainDebug: Debug.Debugger;
 
-  constructor(debug: Debugger, client: LightwaveRFClient, email: string, pin: string) {
+  constructor(debug: Debugger, email: string, pin: string) {
     if (!email || !pin) {
       throw "No email or pin specified. The server configuration (rooms, devices, etc.) cannot be obtained";
     }
     this.mainDebug = debug;
-    this.debug = debug.extend('account');
-    this.client = client;
+    this.debug = debug.extend("account");
     this.email = email;
     this.pin = pin;
   }
 
-  getConfiguration(callback: any) {
-    this.debug('Getting rooms from LightWave');
+  async getConfiguration(
+    callback?: (devices: LightwaveDevice[], error: any) => void
+  ) {
+    this.debug("Getting rooms from LightWave");
     var self = this;
-    var host = 'https://control-api.lightwaverf.com';
-    var json = rp.defaults({
-      json: true
-    });
+    var host = "https://control-api.lightwaverf.com";
 
-    var auth: RequestAPI<rp.RequestPromise<any>, rp.RequestPromiseOptions, RequiredUriUrl>, token;
-    json.get(host + '/v1/user?password=' + this.pin + '&username=' + this.email)
-      .then(function (res) {
-        return json.get(host + '/v1/auth?application_key=' + res.application_key)
-      })
-      .then(function (res) {
-        token = res.token;
-        auth = json.defaults({
-          headers: {
-            'X-LWRF-token': token,
-            'X-LWRF-platform': 'ios',
-            'X-LWRF-skin': 'lightwaverf'
-          }
-        });
+    function assertResponse(response: Response) {
+      if (!response.ok) {
+        throw new Error("Network response was not ok: " + response.statusText);
+      }
+      return response.json();
+    }
 
-        return auth.get(host + '/v1/device_type?nested=1');
-      })
-      .then(function (res) {
-        return auth.get(host + '/v1/user_profile?nested=1')
-      })
-      .then(function (res) {
-        self.parseRooms(res, callback);
+    let token: string = "";
+    try {
+      this.debug("Fetching token from LightWave", {
+        url: host + "/v1/user?password=" + this.pin + "&username=" + this.email,
       });
+      const userResponse = await fetch(
+        host + "/v1/user?password=" + this.pin + "&username=" + this.email
+      );
+      this.debug("User response: %O", userResponse);
+      const userData = await assertResponse(userResponse);
+      const authResponse = await fetch(
+        host + "/v1/auth?application_key=" + userData.application_key
+      );
+      const authData = await assertResponse(authResponse);
+      token = authData.token;
+
+      const deviceTypeResponse = await fetch(
+        host + "/v1/device_type?nested=1",
+        {
+          headers: {
+            "X-LWRF-token": token,
+            "X-LWRF-platform": "ios",
+            "X-LWRF-skin": "lightwaverf",
+          },
+        }
+      );
+      const something = await assertResponse(deviceTypeResponse);
+
+      const userProfileResponse = await fetch(
+        host + "/v1/user_profile?nested=1",
+        {
+          headers: {
+            "X-LWRF-token": token,
+            "X-LWRF-platform": "ios",
+            "X-LWRF-skin": "lightwaverf",
+          },
+        }
+      );
+      const userProfileData = await assertResponse(userProfileResponse);
+      return self.parseRooms(userProfileData, callback);
+    } catch (error) {
+      this.debug("Error fetching configuration: %O", error);
+      if (!callback) {
+        throw error;
+      }
+
+      callback([], error as Error);
+    }
   }
 
-
-  parseRooms(lightwaveResponse: any, callback: (devices: LightwaveDevice[], error: Error | null) => void) {
-    this.debug('Parsing lightwaveResponse: ',
-      lightwaveResponse.content.estates[0].locations[0].zones[0].rooms[0].devices);
+  parseRooms(
+    lightwaveResponse: any,
+    callback?: (devices: LightwaveDevice[], error: Error | null) => void
+  ) {
+    this.debug(
+      "Parsing lightwaveResponse: ",
+      lightwaveResponse.content.estates[0].locations[0].zones[0].rooms[0]
+        .devices
+    );
 
     const home = lightwaveResponse.content.estates[0].locations[0].zones[0];
     const devices = [];
@@ -77,7 +108,10 @@ export class LightwaveAccount {
       //   m: Mood (inactive)
       //   M: Mood (active)
       //   o: All Off
-      var deviceTypeMapping: Map<number, LightwaveDeviceType> = new Map<number, LightwaveDeviceType>();
+      var deviceTypeMapping: Map<number, LightwaveDeviceType> = new Map<
+        number,
+        LightwaveDeviceType
+      >();
       deviceTypeMapping.set(1, LightwaveDeviceType.OnOff);
       deviceTypeMapping.set(2, LightwaveDeviceType.Dimmer);
       deviceTypeMapping.set(3, LightwaveDeviceType.OnOff);
@@ -86,7 +120,6 @@ export class LightwaveAccount {
         var d = r.devices[j];
 
         const device = new LightwaveDevice(
-          this.client,
           this.mainDebug,
           r.room_number,
           d.device_number,
@@ -99,9 +132,10 @@ export class LightwaveAccount {
       }
     }
 
-    this.debug('Devices: %O', devices)
+    if (!callback) {
+      return devices;
+    }
 
     callback(devices, null);
-  };
-
+  }
 }
