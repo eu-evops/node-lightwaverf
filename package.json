@@ -1,7 +1,7 @@
 {
   "name": "@evops/lightwaverf",
   "description": "Lightwave RF client library",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "exports": {
     ".": {
       "types": "./.dist/index.d.ts",

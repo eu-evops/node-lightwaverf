@@ -34,7 +34,7 @@ export class LightwaveAccount {
     let token: string = "";
     try {
       this.debug("Fetching token from LightWave", {
-        url: host + "/v1/user?password=" + this.pin + "&username=" + this.email,
+        url: host + "/v1/user?password=****&username=****",
       });
       const userResponse = await fetch(
         host + "/v1/user?password=" + this.pin + "&username=" + this.email
