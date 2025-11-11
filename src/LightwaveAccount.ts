@@ -97,7 +97,7 @@ export class LightwaveAccount {
     for (var i = 0; i < home.rooms.length; i++) {
       var r = home.rooms[i];
 
-      this.debug("Room " + r.name + " with " + r.devices.length + " devices");
+      this.debug("Room " + r.name + " with " + r.devices?.length + " devices");
 
       // Get device types
       //   O: On/Off Switch
@@ -116,7 +116,7 @@ export class LightwaveAccount {
       deviceTypeMapping.set(2, LightwaveDeviceType.Dimmer);
       deviceTypeMapping.set(3, LightwaveDeviceType.OnOff);
 
-      for (var j = 0; j < r.devices.length; j++) {
+      for (var j = 0; j < r.devices?.length; j++) {
         var d = r.devices[j];
 
         const device = new LightwaveDevice(
