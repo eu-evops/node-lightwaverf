@@ -20,12 +20,16 @@ describe("LightwaveRF", () => {
     // const devices = await lw.getDevices();
     await lw.connect();
     await lw.ensureRegistration();
+    await lw.lwClient.disconnect();
   });
 
   it("should turn device on", async () => {
     const lw = new LightwaveRF({
       email: "some@user.com",
       pin: "1234",
+      // Disabling link display updates as they cause buffer issues in the link
+      // device
+      linkDisplayUpdates: true,
     });
 
     // const devices = await lw.getDevices();
@@ -34,13 +38,19 @@ describe("LightwaveRF", () => {
     const devices = await lw.getDevices();
 
     const wallLamps = devices?.find((d) => {
-      return d.deviceName === "Wall lamps";
+      return d.deviceName === "Table lamp";
     });
 
     if (!wallLamps) {
-      throw new Error("Could not find wall lamps in the config");
+      throw new Error("Could not find table lamp in the config");
     }
 
-    lw.turnOff(wallLamps);
-  });
+    for (let i = 0; i < 5; i++) {
+      console.debug("Turning device on and off", i);
+      await lw.turnOn(wallLamps);
+      await lw.turnOff(wallLamps);
+    }
+
+    await lw.lwClient.disconnect();
+  }, 30000);
 });

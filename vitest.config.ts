@@ -6,7 +6,7 @@ export default defineConfig({
     environment: "node",
     printConsoleTrace: true,
     env: {
-      DEBUG: "lightwave*",
+      // DEBUG: "lightwave*",
     },
   },
 });

@@ -1,5 +1,5 @@
 import Debug, { Debugger } from "debug";
-import dgram from "dgram";
+import dgram, { RemoteInfo } from "dgram";
 import events from "events";
 import LightwaveMessageProcessor from "./LightwaveMessageProcessor";
 import { LightwaveMessageProcessorForJson } from "./LightwaveMessageProcessorForJson";
@@ -41,16 +41,23 @@ export class LightwaveRFClient
 
   private debug: Debug.Debugger;
   private transactionListeners: Map<number, any> = new Map();
-  delay: number = 125;
+  delay: number = 800;
 
   public serial?: string;
   public mac?: string;
   public model?: string;
   public uptime?: number;
   public version?: string;
+  discoverLinkIp: boolean;
 
-  constructor(debug: Debugger, private ip: string = "255.255.255.255") {
+  constructor(
+    debug: Debugger,
+    private ip: string = "255.255.255.255",
+    { discoverLinkIp = true }: { discoverLinkIp?: boolean } = {}
+  ) {
     super();
+
+    this.discoverLinkIp = discoverLinkIp;
 
     this.debug = debug.extend("client");
     this.senderSocket = dgram.createSocket("udp4");
@@ -133,21 +140,21 @@ export class LightwaveRFClient
     message: string | Buffer,
     callback?: (transaction: LightwaveTransaction | null, error: Error) => void
   ) {
-    const transaction = Math.round(Math.random() * Math.pow(10, 8));
-    const messageWithTransaction = `${transaction},${message}`;
-    const transactionDebug = this.debug.extend("tx:" + transaction);
+    const transactionId = Math.round(Math.random() * Math.pow(10, 8));
+    const messageWithTransaction = `${transactionId},${message}`;
+    const transactionDebug = this.debug.extend("tx:" + transactionId);
 
-    this.transactionListeners.set(transaction, {
+    this.transactionListeners.set(transactionId, {
       message: message,
       debug: transactionDebug,
       delay: this.delay,
       callback: callback,
     });
 
-    this.debug("Queueing message: %s", messageWithTransaction);
+    this.debug("[%d] Queueing message: %s", Date.now(), messageWithTransaction);
 
     this.commandQueue.add(<LightwaveTransaction>{
-      id: transaction,
+      id: transactionId,
       message: messageWithTransaction,
       debug: transactionDebug,
       callback,
@@ -158,12 +165,14 @@ export class LightwaveRFClient
 
   private async processSendQueue() {
     if (this.commandQueue.busy) {
-      setTimeout(this.processSendQueue.bind(this), this.delay);
+      this.debug(`The queue is busy, will wait to process`);
       return;
     }
 
     const command = this.commandQueue.next();
     if (!command) return;
+
+    this.debug(`Processing command: %o`, { command });
 
     this.commandQueue.busy = true;
     const transactionListener = this.transactionListeners.get(command.id);
@@ -173,9 +182,16 @@ export class LightwaveRFClient
       transaction: LightwaveTransaction,
       error: Error
     ) => {
-      this.commandQueue.busy = false;
       originalCallback?.(transaction, error);
-      setTimeout(this.processSendQueue.bind(this), this.delay);
+      this.debug(
+        "Transaction %d completed, scheduling next processing in %dms !!!!!!!!!!",
+        transaction.id,
+        this.delay
+      );
+      setTimeout(() => {
+        this.commandQueue.busy = false;
+        this.processSendQueue();
+      }, this.delay);
     };
 
     // If we didn't hear back within the timeout
@@ -183,7 +199,9 @@ export class LightwaveRFClient
       const listener = this.transactionListeners.get(command.id);
       if (!listener) return;
 
-      originalCallback?.(null, new Error("Execution expired"));
+      originalCallback?.(null, new Error("Execution expired " + command.id));
+
+      this.commandQueue.busy = false;
       this.transactionListeners.delete(command.id);
       this.processSendQueue();
     }, 5000);
@@ -227,7 +245,7 @@ export class LightwaveRFClient
           messageProcessor.constructor.name
         );
         const lightwaveMessage = messageProcessor.process(message);
-        this.processLightwaveMessage(lightwaveMessage);
+        this.processLightwaveMessage(lightwaveMessage, remoteInfo);
         return;
       }
     }
@@ -235,10 +253,11 @@ export class LightwaveRFClient
     throw "Message cannot be processed";
   }
 
-  private processLightwaveMessage(lightwaveMessage: any) {
+  private processLightwaveMessage(
+    lightwaveMessage: any,
+    remoteInfo: RemoteInfo
+  ) {
     this.debug("Processing lightwave message: %o", lightwaveMessage);
-    this.debug("Current listeners: %o", this.transactionListeners);
-
     this.debug("Link response fn", lightwaveMessage.fn);
 
     // update info from link
@@ -258,8 +277,8 @@ export class LightwaveRFClient
       this.uptime = lightwaveMessage.uptime;
     }
 
-    if (lightwaveMessage.ip) {
-      this.ip = lightwaveMessage.ip;
+    if (this.discoverLinkIp) {
+      this.ip = remoteInfo.address;
     }
 
     if (lightwaveMessage.fw) {
@@ -299,8 +318,10 @@ export class LightwaveRFClient
     if (!listener) return;
 
     if (lightwaveMessage.error?.match(/^ERR,6,/)) {
-      listener.delay = listener.delay * 2;
-      const msg = `${lightwaveMessage.id},!${listener.message}`;
+      // Storing delay on a message level provides the ability to implement
+      // exponential backoff, here the maximum is 10 seconds
+      listener.delay = Math.min(listener.delay * 2, 10000);
+      const msg = `${lightwaveMessage.id},${listener.message}`;
       this.debug(
         "message errorred, retrying: %o, %o with delay: %o",
         msg,
@@ -309,16 +330,18 @@ export class LightwaveRFClient
       );
       setTimeout(() => {
         this.exec(msg);
-      }, Math.round(listener.delay));
+      }, Math.round(listener.delay * 2));
       return;
     }
 
-    this.commandQueue.busy = false;
     if (listener) {
       listener.debug("Found transaction listener");
-      listener.callback(lightwaveMessage, null);
-      listener.debug("Transaction completed, removing listener");
+      listener.debug(
+        "[%d] Transaction completed, removing listener",
+        Date.now()
+      );
       this.transactionListeners.delete(lightwaveMessage.id);
+      listener.callback(lightwaveMessage, null);
     } else {
       this.debug("Listener not found for message: %o", lightwaveMessage);
     }

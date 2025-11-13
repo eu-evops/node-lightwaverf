@@ -14,6 +14,7 @@ class LightwaveRFConfiguration {
   host?: any;
   email?: any;
   pin?: any;
+  linkDisplayUpdates?: boolean;
 }
 
 declare interface ILightwaveRF {
@@ -59,11 +60,19 @@ export default class LightwaveRF
   lwClient: LightwaveRFClient;
   lwAccount: LightwaveAccount;
   debug: debug.Debugger;
+  private linkDisplayUpdates: boolean;
 
-  constructor({ email, pin, ip, timeout }: LightwaveRFConfiguration) {
+  constructor({
+    email,
+    pin,
+    ip,
+    timeout,
+    linkDisplayUpdates = true,
+  }: LightwaveRFConfiguration) {
     super();
     this.setMaxListeners(255);
     this.debug = debug("lightwave");
+    this.linkDisplayUpdates = linkDisplayUpdates;
 
     this.debug("Initialising LightwaveRF Client");
 
@@ -129,26 +138,59 @@ export default class LightwaveRF
   }
 
   async turnOn({ roomId, deviceId, roomName, deviceName }: ILightwaveDevice) {
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const linkDisplayUpdate = this.linkDisplayUpdates
+      ? `|${roomName} ${deviceName}|Turn on|`
+      : "";
+
     this.lwClient.send(
-      `!F1R${roomId}D${deviceId}|${roomName} ${deviceName}|Turn on|`
+      `!F1R${roomId}D${deviceId}${linkDisplayUpdate}`,
+      (_, error) => {
+        if (error) return reject(error);
+        resolve();
+      }
     );
+
+    return promise;
   }
 
   async turnOff({ roomId, deviceId, roomName, deviceName }: ILightwaveDevice) {
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const linkDisplayUpdate = this.linkDisplayUpdates
+      ? `|${roomName} ${deviceName}|Turn off|`
+      : "";
+
     this.lwClient.send(
-      `!F0R${roomId}D${deviceId}|${roomName} ${deviceName}|Turn off|`
+      `!F0R${roomId}D${deviceId}${linkDisplayUpdate}`,
+      (_, error) => {
+        if (error) return reject(error);
+        resolve();
+      }
     );
+
+    return promise;
   }
 
   async dim(
     { roomId, deviceId, roomName, deviceName }: ILightwaveDevice,
     percentage: number
   ) {
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
     const lwDim = Math.round(percentage * 0.32);
 
+    const linkDisplayUpdate = this.linkDisplayUpdates
+      ? `|${roomName} ${deviceName}|Dim to ${percentage}%|`
+      : "";
+
     this.lwClient.send(
-      `!FdP${lwDim}R${roomId}D${deviceId}|${roomName} ${deviceName}|Dim to ${percentage}%|`
+      `!FdP${lwDim}R${roomId}D${deviceId}${linkDisplayUpdate}`,
+      (_, error) => {
+        if (error) return reject(error);
+        resolve();
+      }
     );
+
+    return promise;
   }
 
   async connect() {

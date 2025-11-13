@@ -21,6 +21,7 @@ export default class LightwaveMessageProcessorForText
     response.id = parseInt(trans[0]);
     response.message = content;
     response.error = content.match("^ERR") ? content : null;
+
     return response;
   }
 
