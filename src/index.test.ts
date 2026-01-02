@@ -1,8 +1,10 @@
 import fetchVCR from "fetch-vcr";
-import { beforeAll, describe, it } from "vitest";
+import { afterEach, beforeAll, describe, it } from "vitest";
 import LightwaveRF from ".";
 
 describe("LightwaveRF", () => {
+  let lw: LightwaveRF;
+
   beforeAll(() => {
     fetchVCR.configure({
       fixturePath: __dirname + "/.fixtures",
@@ -11,8 +13,12 @@ describe("LightwaveRF", () => {
     global.fetch = fetchVCR as typeof global.fetch;
   });
 
+  afterEach(async () => {
+    await lw.lwClient.disconnect();
+  });
+
   it("should allow device linking", async () => {
-    const lw = new LightwaveRF({
+    lw = new LightwaveRF({
       email: "some@user.com",
       pin: "1234",
     });
@@ -24,7 +30,7 @@ describe("LightwaveRF", () => {
   });
 
   it("should turn device on", async () => {
-    const lw = new LightwaveRF({
+    lw = new LightwaveRF({
       email: "some@user.com",
       pin: "1234",
       // Disabling link display updates as they cause buffer issues in the link
@@ -36,21 +42,24 @@ describe("LightwaveRF", () => {
     await lw.connect();
     // await lw.ensureRegistration();
     const devices = await lw.getDevices();
+    const roomToInteractWith = "TV Room";
+    const lightToInteractWith = "Lights";
 
-    const wallLamps = devices?.find((d) => {
-      return d.deviceName === "Table lamp";
+    const light = devices?.find((d) => {
+      return (
+        d.roomName === roomToInteractWith &&
+        d.deviceName === lightToInteractWith
+      );
     });
 
-    if (!wallLamps) {
-      throw new Error("Could not find table lamp in the config");
+    if (!light) {
+      throw new Error(`Could not find ${lightToInteractWith} in the config`);
     }
 
     for (let i = 0; i < 5; i++) {
       console.debug("Turning device on and off", i);
-      await lw.turnOn(wallLamps);
-      await lw.turnOff(wallLamps);
+      await lw.turnOn(light);
+      await lw.turnOff(light);
     }
-
-    await lw.lwClient.disconnect();
   }, 30000);
 });

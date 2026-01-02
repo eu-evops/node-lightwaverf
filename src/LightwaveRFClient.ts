@@ -1,11 +1,13 @@
-import Debug, { Debugger } from "debug";
+import { Debugger } from "debug";
 import dgram, { RemoteInfo } from "dgram";
 import events from "events";
+import {
+  LightwaveCommandQueue,
+  TransactionResponse,
+} from "./LightwaveCommandQueue";
 import LightwaveMessageProcessor from "./LightwaveMessageProcessor";
 import { LightwaveMessageProcessorForJson } from "./LightwaveMessageProcessorForJson";
 import LightwaveMessageProcessorForText from "./LightwaveMessageProcessorForText";
-import { LightwaveTransaction } from "./LightwaveTransaction";
-import { Queue } from "./Queue";
 
 const LIGHTWAVE_LINK_SEND_PORT = 9760;
 const LIGHTWAVE_LINK_RECEIVE_PORT = 9761;
@@ -33,14 +35,9 @@ export class LightwaveRFClient
 {
   private senderSocket: dgram.Socket;
   private receiverSocket: dgram.Socket;
-
-  private commandQueue: Queue<LightwaveTransaction> =
-    new Queue<LightwaveTransaction>();
-
+  private commandQueue!: LightwaveCommandQueue;
   private messageProcessors: LightwaveMessageProcessor[] = [];
-
-  private debug: Debug.Debugger;
-  private transactionListeners: Map<number, any> = new Map();
+  private debug: Debugger;
   delay: number = 800;
 
   public serial?: string;
@@ -64,6 +61,12 @@ export class LightwaveRFClient
     this.senderSocket.unref();
     this.receiverSocket = dgram.createSocket("udp4");
     this.receiverSocket.unref();
+
+    this.commandQueue = new LightwaveCommandQueue({
+      debug: this.debug,
+      delay: this.delay,
+      onExecute: (message) => this.exec(message),
+    });
 
     this.messageProcessors.push(
       new LightwaveMessageProcessorForJson(this.debug)
@@ -109,6 +112,7 @@ export class LightwaveRFClient
   async disconnect() {
     this.receiverSocket.removeAllListeners();
     this.senderSocket.removeAllListeners();
+    this.commandQueue.destroy();
 
     const { promise: senderPromise, resolve: senderResolve } =
       Promise.withResolvers<void>();
@@ -121,94 +125,19 @@ export class LightwaveRFClient
     return Promise.all([senderPromise, receiverPromise]);
   }
 
-  private checkRegistration() {
+  private async checkRegistration() {
     this.debug("Checking registration");
-    this.send(
-      "@H",
-      (transaction: LightwaveTransaction | null, error: Error) => {
-        if (error) {
-          this.debug("Error: %o", error);
-        }
-
-        this.debug(transaction);
-        this.emit("ready", this);
-      }
-    );
-  }
-
-  public send(
-    message: string | Buffer,
-    callback?: (transaction: LightwaveTransaction | null, error: Error) => void
-  ) {
-    const transactionId = Math.round(Math.random() * Math.pow(10, 8));
-    const messageWithTransaction = `${transactionId},${message}`;
-    const transactionDebug = this.debug.extend("tx:" + transactionId);
-
-    this.transactionListeners.set(transactionId, {
-      message: message,
-      debug: transactionDebug,
-      delay: this.delay,
-      callback: callback,
-    });
-
-    this.debug("[%d] Queueing message: %s", Date.now(), messageWithTransaction);
-
-    this.commandQueue.add(<LightwaveTransaction>{
-      id: transactionId,
-      message: messageWithTransaction,
-      debug: transactionDebug,
-      callback,
-    });
-
-    this.processSendQueue();
-  }
-
-  private async processSendQueue() {
-    if (this.commandQueue.busy) {
-      this.debug(`The queue is busy, will wait to process`);
-      return;
+    try {
+      const transaction = await this.send("@H");
+      this.debug(transaction);
+    } catch (error) {
+      this.debug("Error: %o", error);
     }
+    this.emit("ready", this);
+  }
 
-    const command = this.commandQueue.next();
-    if (!command) return;
-
-    this.debug(`Processing command: %o`, { command });
-
-    this.commandQueue.busy = true;
-    const transactionListener = this.transactionListeners.get(command.id);
-    const originalCallback = transactionListener.callback;
-
-    transactionListener.callback = (
-      transaction: LightwaveTransaction,
-      error: Error
-    ) => {
-      originalCallback?.(transaction, error);
-      this.debug(
-        "Transaction %d completed, scheduling next processing in %dms !!!!!!!!!!",
-        transaction.id,
-        this.delay
-      );
-      setTimeout(() => {
-        this.commandQueue.busy = false;
-        this.processSendQueue();
-      }, this.delay);
-    };
-
-    // If we didn't hear back within the timeout
-    setTimeout(() => {
-      const listener = this.transactionListeners.get(command.id);
-      if (!listener) return;
-
-      originalCallback?.(null, new Error("Execution expired " + command.id));
-
-      this.commandQueue.busy = false;
-      this.transactionListeners.delete(command.id);
-      this.processSendQueue();
-    }, 5000);
-
-    const transactionDebug = this.debug.extend(`transaction:${command?.id}`);
-    transactionDebug("Starting new transaction");
-    this.exec(command!.message);
+  public send(message: string | Buffer): Promise<TransactionResponse> {
+    return this.commandQueue.send(message);
   }
 
   private exec(message: Buffer | string | undefined) {
@@ -278,6 +207,7 @@ export class LightwaveRFClient
     }
 
     if (this.discoverLinkIp) {
+      this.debug(`Updating link ip to ${remoteInfo.address}`);
       this.ip = remoteInfo.address;
     }
 
@@ -314,36 +244,15 @@ export class LightwaveRFClient
       );
     }
 
-    const listener = this.transactionListeners.get(lightwaveMessage.id);
-    if (!listener) return;
-
+    // Handle retryable errors (ERR,6 = device busy)
     if (lightwaveMessage.error?.match(/^ERR,6,/)) {
-      // Storing delay on a message level provides the ability to implement
-      // exponential backoff, here the maximum is 10 seconds
-      listener.delay = Math.min(listener.delay * 2, 10000);
-      const msg = `${lightwaveMessage.id},${listener.message}`;
-      this.debug(
-        "message errorred, retrying: %o, %o with delay: %o",
-        msg,
-        listener,
-        listener.delay
-      );
-      setTimeout(() => {
-        this.exec(msg);
-      }, Math.round(listener.delay * 2));
+      this.commandQueue.handleRetryableError(lightwaveMessage.id);
       return;
     }
 
-    if (listener) {
-      listener.debug("Found transaction listener");
-      listener.debug(
-        "[%d] Transaction completed, removing listener",
-        Date.now()
-      );
-      this.transactionListeners.delete(lightwaveMessage.id);
-      listener.callback(lightwaveMessage, null);
-    } else {
-      this.debug("Listener not found for message: %o", lightwaveMessage);
+    // Pass successful response to the queue
+    if (lightwaveMessage.id !== undefined) {
+      this.commandQueue.handleResponse(lightwaveMessage);
     }
   }
 }

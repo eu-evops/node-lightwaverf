@@ -15,6 +15,7 @@ class LightwaveRFConfiguration {
   email?: any;
   pin?: any;
   linkDisplayUpdates?: boolean;
+  discoverLinkIp?: boolean;
 }
 
 declare interface ILightwaveRF {
@@ -68,6 +69,7 @@ export default class LightwaveRF
     ip,
     timeout,
     linkDisplayUpdates = true,
+    discoverLinkIp = true,
   }: LightwaveRFConfiguration) {
     super();
     this.setMaxListeners(255);
@@ -76,7 +78,9 @@ export default class LightwaveRF
 
     this.debug("Initialising LightwaveRF Client");
 
-    this.lwClient = new LightwaveRFClient(this.debug, ip);
+    this.lwClient = new LightwaveRFClient(this.debug, ip, {
+      discoverLinkIp,
+    });
     this.lwClient.once("ready", () => {
       this.debug("LightwaveRF ready");
     });
@@ -138,59 +142,34 @@ export default class LightwaveRF
   }
 
   async turnOn({ roomId, deviceId, roomName, deviceName }: ILightwaveDevice) {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
     const linkDisplayUpdate = this.linkDisplayUpdates
       ? `|${roomName} ${deviceName}|Turn on|`
       : "";
 
-    this.lwClient.send(
-      `!F1R${roomId}D${deviceId}${linkDisplayUpdate}`,
-      (_, error) => {
-        if (error) return reject(error);
-        resolve();
-      }
-    );
-
-    return promise;
+    await this.lwClient.send(`!F1R${roomId}D${deviceId}${linkDisplayUpdate}`);
   }
 
   async turnOff({ roomId, deviceId, roomName, deviceName }: ILightwaveDevice) {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
     const linkDisplayUpdate = this.linkDisplayUpdates
       ? `|${roomName} ${deviceName}|Turn off|`
       : "";
 
-    this.lwClient.send(
-      `!F0R${roomId}D${deviceId}${linkDisplayUpdate}`,
-      (_, error) => {
-        if (error) return reject(error);
-        resolve();
-      }
-    );
-
-    return promise;
+    await this.lwClient.send(`!F0R${roomId}D${deviceId}${linkDisplayUpdate}`);
   }
 
   async dim(
     { roomId, deviceId, roomName, deviceName }: ILightwaveDevice,
     percentage: number
   ) {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
     const lwDim = Math.round(percentage * 0.32);
 
     const linkDisplayUpdate = this.linkDisplayUpdates
       ? `|${roomName} ${deviceName}|Dim to ${percentage}%|`
       : "";
 
-    this.lwClient.send(
-      `!FdP${lwDim}R${roomId}D${deviceId}${linkDisplayUpdate}`,
-      (_, error) => {
-        if (error) return reject(error);
-        resolve();
-      }
+    await this.lwClient.send(
+      `!FdP${lwDim}R${roomId}D${deviceId}${linkDisplayUpdate}`
     );
-
-    return promise;
   }
 
   async connect() {
@@ -198,26 +177,27 @@ export default class LightwaveRF
   }
 
   async isRegistered() {
-    return new Promise<boolean>((resolve) => {
-      const user = process.env.USER;
-      this.lwClient.send(`@H|Check registration|user:${user}|`, (response) => {
-        return resolve(!response?.error);
-      });
-    });
+    const user = process.env.USER;
+    const response = await this.lwClient.send(
+      `@H|Check registration|user:${user}|`
+    );
+    return !response?.error;
   }
 
   async ensureRegistration() {
+    const user = process.env.USER;
+    const response = await this.lwClient.send(
+      `@H|Check registration|user:${user}|`
+    );
+
+    if (!response?.error) {
+      return;
+    }
+
+    this.debug("We are not registered with the hub");
+    await this.lwClient.send("!F*p");
+
     return new Promise<void>((resolve) => {
-      const user = process.env.USER;
-      this.lwClient.send(`@H|Check registration|user:${user}|`, (response) => {
-        if (!response?.error) {
-          return resolve();
-        }
-
-        this.debug("We are not registered with the hub");
-        this.lwClient.send("!F*p");
-      });
-
       this.lwClient.on("registered", resolve);
     });
   }
